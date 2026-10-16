@@ -51,7 +51,13 @@ def main() -> None:
             rating = args.rating
         else:
             print(f"Running the agents on {ticker} for {args.date} ...", flush=True)
-            _, rating = graph.propagate(ticker, args.date, portfolio=broker.portfolio_context())
+            state, rating = graph.propagate(ticker, args.date, portfolio=broker.portfolio_context())
+            report = graph.save_reports(state, ticker)
+            print(f"Full report from every agent: {report}")
+            summary = os.getenv("GITHUB_STEP_SUMMARY")
+            if summary:
+                with open(summary, "a", encoding="utf-8") as out:
+                    out.write(f"## {ticker}: {rating}\n\n{state.get('final_trade_decision', '')}\n\n")
         result = execute_rating(broker, ticker, rating, args.max_position_pct, args.dry_run)
         result["date"] = args.date
         print(json.dumps(result, indent=2, default=str))

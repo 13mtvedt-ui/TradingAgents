@@ -1,0 +1,76 @@
+name: Backtest
+
+# Run all the agents over past dates and score their ratings against what the
+# price did next (alpha vs. the regional benchmark over the holding period).
+# Each ticker runs as its own job in parallel. Needs ANTHROPIC_API_KEY or
+# OPENAI_API_KEY as a repo secret. Every cell is a full agent run, so cost grows
+# with tickers x dates.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers, comma separated (e.g. NVDA,AAPL,EQNR.OL,ASML.AS)"
+        default: "NVDA,AAPL,EQNR.OL,ASML.AS"
+      start:
+        description: "First analysis date, YYYY-MM-DD"
+        default: "2026-08-03"
+      end:
+        description: "Last analysis date, YYYY-MM-DD"
+        default: "2026-09-28"
+      every:
+        description: "Days between analysis dates"
+        default: "28"
+      provider:
+        description: "LLM provider"
+        type: choice
+        options: [anthropic, openai]
+        default: anthropic
+
+jobs:
+  tickers:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.split.outputs.list }}
+    steps:
+      - id: split
+        env:
+          TICKERS: ${{ inputs.tickers }}
+        run: echo "list=$(python3 -c 'import json,os; print(json.dumps([t.strip() for t in os.environ["TICKERS"].split(",") if t.strip()]))')" >> "$GITHUB_OUTPUT"
+
+  backtest:
+    needs: tickers
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        ticker: ${{ fromJSON(needs.tickers.outputs.list) }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TRADINGAGENTS_LLM_PROVIDER: ${{ inputs.provider }}
+      TRADINGAGENTS_DEEP_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-opus-5-5' || 'gpt-6-sol' }}
+      TRADINGAGENTS_QUICK_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-sonnet-5' || 'gpt-6-luna' }}
+      TRADINGAGENTS_RESULTS_DIR: ${{ github.workspace }}/results
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - name: Backtest ${{ matrix.ticker }}
+        env:
+          TICKER: ${{ matrix.ticker }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          EVERY: ${{ inputs.every }}
+        run: |
+          set -o pipefail
+          tradingagents backtest "$TICKER" --start "$START" --end "$END" --every "$EVERY" | tee out.txt
+          { echo "## $TICKER"; echo '```'; cat out.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backtest-${{ matrix.ticker }}
+          path: results/
