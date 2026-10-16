@@ -26,6 +26,11 @@ on:
         type: choice
         options: [anthropic, openai]
         default: anthropic
+      model:
+        description: "Model for every agent (Haiku is the cheapest)"
+        type: choice
+        options: [claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5]
+        default: claude-haiku-5-5
 
 jobs:
   tickers:
@@ -50,8 +55,8 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       TRADINGAGENTS_LLM_PROVIDER: ${{ inputs.provider }}
-      TRADINGAGENTS_DEEP_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-opus-5-5' || 'gpt-6-sol' }}
-      TRADINGAGENTS_QUICK_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-sonnet-5' || 'gpt-6-luna' }}
+      TRADINGAGENTS_DEEP_THINK_LLM: ${{ inputs.provider == 'anthropic' && inputs.model || 'gpt-6-sol' }}
+      TRADINGAGENTS_QUICK_THINK_LLM: ${{ inputs.provider == 'anthropic' && inputs.model || 'gpt-6-luna' }}
       TRADINGAGENTS_RESULTS_DIR: ${{ github.workspace }}/results
     steps:
       - uses: actions/checkout@v7
