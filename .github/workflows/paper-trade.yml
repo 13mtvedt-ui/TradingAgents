@@ -1,0 +1,53 @@
+name: Paper trade
+
+# Run the agents on GitHub and trade their decisions on a paper account.
+# Repo secrets: OPENAI_API_KEY or ANTHROPIC_API_KEY, and optionally
+# ALPACA_API_KEY + ALPACA_SECRET_KEY from an Alpaca *paper* account.
+# Without Alpaca keys a local simulated account starting at 100,000 USD is used;
+# it lives only for this run and is kept as the run's artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers, space separated"
+        default: "NVDA"
+      provider:
+        description: "LLM provider"
+        type: choice
+        options: [openai, anthropic]
+        default: openai
+      rating:
+        description: "Skip the agents and use this rating (test the order path only)"
+        type: choice
+        options: ["", Buy, Overweight, Hold, Underweight, Sell]
+        default: ""
+
+jobs:
+  paper-trade:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      TRADINGAGENTS_LLM_PROVIDER: ${{ inputs.provider }}
+      TRADINGAGENTS_DEEP_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-opus-5-5' || 'gpt-6-sol' }}
+      TRADINGAGENTS_QUICK_THINK_LLM: ${{ inputs.provider == 'anthropic' && 'claude-sonnet-5' || 'gpt-6-luna' }}
+      TRADINGAGENTS_RESULTS_DIR: ${{ github.workspace }}/results
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - name: Run
+        env:
+          TICKERS: ${{ inputs.tickers }}
+          RATING: ${{ inputs.rating }}
+        run: python paper_trade.py $TICKERS ${RATING:+--rating "$RATING"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper-trade-results
+          path: results/
